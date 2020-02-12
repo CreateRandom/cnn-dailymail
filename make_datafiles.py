@@ -6,7 +6,7 @@ import subprocess
 import collections
 import tensorflow as tf
 from tensorflow.core.example import example_pb2
-
+import pickle as pkl
 
 dm_single_close_quote = u'\u2019' # unicode
 dm_double_close_quote = u'\u201d'
@@ -53,12 +53,12 @@ def chunk_file(set_name):
       chunk += 1
 
 
-def chunk_all():
+def chunk_all(set_list):
   # Make a dir to hold the chunks
   if not os.path.isdir(chunks_dir):
     os.mkdir(chunks_dir)
   # Chunk the data
-  for set_name in ['train', 'val', 'test']:
+  for set_name in set_list:
     print "Splitting %s data into chunks..." % set_name
     chunk_file(set_name)
   print "Saved chunked data in %s" % chunks_dir
@@ -83,7 +83,7 @@ def tokenize_stories(stories_dir, tokenized_stories_dir):
   num_orig = len(os.listdir(stories_dir))
   num_tokenized = len(os.listdir(tokenized_stories_dir))
   if num_orig != num_tokenized:
-    raise Exception("The tokenized stories directory %s contains %i files, but it should contain the same number as %s (which has %i files). Was there an error during tokenization?" % (tokenized_stories_dir, num_tokenized, stories_dir, num_orig))
+    print "The tokenized stories directory %s contains %i files, but it should contain the same number as %s (which has %i files). Was there an error during tokenization?" % (tokenized_stories_dir, num_tokenized, stories_dir, num_orig)
   print "Successfully finished tokenizing %s to %s.\n" % (stories_dir, tokenized_stories_dir)
 
 
@@ -157,7 +157,8 @@ def write_to_bin(url_file, out_file, makevocab=False):
 
   if makevocab:
     vocab_counter = collections.Counter()
-
+  idx_to_story_dict = {}
+  counter = 0
   with open(out_file, 'wb') as writer:
     for idx,s in enumerate(story_fnames):
       if idx % 1000 == 0:
@@ -170,11 +171,6 @@ def write_to_bin(url_file, out_file, makevocab=False):
         story_file = os.path.join(dm_tokenized_stories_dir, s)
       else:
         print "Error: Couldn't find tokenized story file %s in either tokenized story directories %s and %s. Was there an error during tokenization?" % (s, cnn_tokenized_stories_dir, dm_tokenized_stories_dir)
-        # Check again if tokenized stories directories contain correct number of files
-        print "Checking that the tokenized stories directories %s and %s contain correct number of files..." % (cnn_tokenized_stories_dir, dm_tokenized_stories_dir)
-        check_num_stories(cnn_tokenized_stories_dir, num_expected_cnn_stories)
-        check_num_stories(dm_tokenized_stories_dir, num_expected_dm_stories)
-        raise Exception("Tokenized stories directories %s and %s contain correct number of files but story file %s found in neither." % (cnn_tokenized_stories_dir, dm_tokenized_stories_dir, s))
 
       # Get the strings to write to .bin file
       article, abstract = get_art_abs(story_file)
@@ -187,6 +183,8 @@ def write_to_bin(url_file, out_file, makevocab=False):
       str_len = len(tf_example_str)
       writer.write(struct.pack('q', str_len))
       writer.write(struct.pack('%ds' % str_len, tf_example_str))
+      idx_to_story_dict[idx] = s
+      counter = counter + 1
 
       # Write the vocab to file, if applicable
       if makevocab:
@@ -199,6 +197,10 @@ def write_to_bin(url_file, out_file, makevocab=False):
         vocab_counter.update(tokens)
 
   print "Finished writing file %s\n" % out_file
+  print "Exported a total of %d files" % counter
+	
+  with open(os.path.join(finished_files_dir, "id_to_story_dict.pkl"), 'wb') as story_dict_f:
+    pkl.dump(idx_to_story_dict,story_dict_f)
 
   # write vocab to file
   if makevocab:
@@ -223,8 +225,8 @@ if __name__ == '__main__':
   dm_stories_dir = sys.argv[2]
 
   # Check the stories directories contain the correct number of .story files
-  check_num_stories(cnn_stories_dir, num_expected_cnn_stories)
-  check_num_stories(dm_stories_dir, num_expected_dm_stories)
+  # check_num_stories(cnn_stories_dir, num_expected_cnn_stories)
+  # check_num_stories(dm_stories_dir, num_expected_dm_stories)
 
   # Create some new directories
   if not os.path.exists(cnn_tokenized_stories_dir): os.makedirs(cnn_tokenized_stories_dir)
@@ -237,8 +239,8 @@ if __name__ == '__main__':
 
   # Read the tokenized stories, do a little postprocessing then write to bin files
   write_to_bin(all_test_urls, os.path.join(finished_files_dir, "test.bin"))
-  write_to_bin(all_val_urls, os.path.join(finished_files_dir, "val.bin"))
-  write_to_bin(all_train_urls, os.path.join(finished_files_dir, "train.bin"), makevocab=True)
+  # write_to_bin(all_val_urls, os.path.join(finished_files_dir, "val.bin"))
+  # write_to_bin(all_train_urls, os.path.join(finished_files_dir, "train.bin"), makevocab=True)
 
   # Chunk the data. This splits each of train.bin, val.bin and test.bin into smaller chunks, each containing e.g. 1000 examples, and saves them in finished_files/chunks
-  chunk_all()
+  chunk_all(['test'])
